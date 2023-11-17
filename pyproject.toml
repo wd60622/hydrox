@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "hydrox"
 version = "0.1.0"
-description = ""
-authors = ["Will Dean <william.dean@free-now.com>"]
+description = "Tools to analyze hydrox data and individuals"
+authors = ["Will Dean <wd60622@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]

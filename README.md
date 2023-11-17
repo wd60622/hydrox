@@ -1,4 +1,6 @@
 
-# Hydrox 
+# Hyrox 
 
-[Hydrox](https://hyrox.com/the-fitness-race/) is a fitness race which involves running and various exercises. 
+[Hyrox](https://hyrox.com/the-fitness-race/) is a fitness race which involves running and various exercises. 
+
+Inspired by this blog post [here](https://thaddeus-segura.com/hacking-hyrox/).

@@ -1,4 +1,5 @@
-from typing import List
+from itertools import islice
+from typing import List, Optional
 from pathlib import Path
 
 import pickle
@@ -11,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from hydrox.data import IndividualDetails, Details, highlight_some
+from hydrox.optimize import create_template, index_values
 
 
 def highlight_callback(values: List[int]) -> List[int]:
@@ -102,14 +104,40 @@ def results(
     """High level overview of the results."""
     details = load_details(path)
 
+    import pdb
+
+    pdb.set_trace()
+
+    other = details.get_other_exercises().index[1:]
+    ax = (
+        details.get_runs()
+        .pct_change()[1:]
+        .set_index(other)
+        .pipe(highlight_some, highlight_idx=highlight)
+    )
+    ax.set(
+        ylim=(0.9 - 1, 1.20 - 1),
+        title="Time relative to previous",
+        xlabel="Previous Exercise",
+    )
+    plt.show()
+
     details.plot_splits(highlight=highlight)
     plt.show()
 
     details.plot_overall_times()
     plt.show()
 
-    details.plot_cummlative_splits(highlight=highlight)
+    exercises = details.get_exercises()
+
+    exercises.iloc[:, :-2].reset_index(drop=True).plot()
     plt.show()
+
+    exercises["rank"] = range(1, len(details.individuals) + 1)
+    print(exercises.corr()["rank"].sort_values())
+
+    # details.plot_cummlative_splits(highlight=highlight)
+    # plt.show()
 
 
 @app.command()
@@ -120,8 +148,6 @@ def individual_comparison(
     details = load_details(path)
 
     exercises = details.get_exercises()
-
-    print(exercises)
 
     exercises_norm = exercises.pipe(normalize, log=True)
 
@@ -147,3 +173,84 @@ def individual_comparison(
             ax = df_plot.plot.scatter(x=x, y=y)
             ax.axhline(0, color="black", linestyle="--")
             plt.show()
+
+
+@app.command()
+def optimize_template(path: Path) -> None:
+    if path.exists():
+        raise FileExistsError(f"File {path} already exists.")
+
+    template = create_template()
+    template.to_csv(path, index=True)
+
+
+@app.command()
+def optimize_template_average(
+    path: Path,
+    results_path: Path = typer.Option(...),
+    individual: Optional[int] = typer.Option(None),
+) -> None:
+    if path.exists():
+        raise FileExistsError(f"File {path} already exists.")
+
+    details = load_details([results_path])
+    df = details.get_exercises()
+    template = create_template()
+    fill_values = (
+        df.T.mean(axis=1).iloc[:-3] if individual is None else df.iloc[individual, :-3]
+    )
+    template.loc[:, "All-In"] = fill_values
+    template.round(2).to_csv(path, index=True)
+
+
+@app.command()
+def optimize(
+    path: Path, maintenance: int = 4, prioritize: int = 2, all_in: int = 2
+) -> None:
+    """Brute force the optimization of the exercises based on the template and different effort levels."""
+    df = pd.read_csv(path, index_col=0).iloc[:8]
+
+    if df.isnull().any().any():
+        raise ValueError("The template must be filled out completely.")
+
+    total = maintenance + prioritize + all_in
+    if total != len(df):
+        raise ValueError(
+            f"The number of exercises must equal the sum of the effort levels. i.e. {total} != {len(df)}"
+        )
+
+    counts = [maintenance, prioritize, all_in]
+    times = []
+    min_time = np.inf
+    best = None
+
+    iteration_values = islice(index_values(counts=counts), 10_000_000)
+    for idx, (main, prio, ai) in enumerate(iteration_values):
+        total_time = (
+            df.iloc[main, 0].sum() + df.iloc[prio, 1].sum() + df.iloc[ai, 2].sum()
+        )
+
+        times.append(total_time)
+
+        if total_time < min_time:
+            min_time = total_time
+            best = (idx, main, prio, ai)
+
+    print("The best happens when you do the following exercises:")
+    print("Maintenance:")
+    print(df.index[best[1]])
+    print("Priority:")
+    print(df.index[best[2]])
+    print("All-In:")
+    print(df.index[best[3]])
+
+    _, axes = plt.subplots(ncols=2)
+
+    ax = axes[0]
+    times = pd.Series(times).pipe(lambda ser: ser / ser.min())
+    times.plot(ax=ax, alpha=0.25)
+    ax.axvline(best[0], color="black", linestyle="--")
+
+    ax = axes[1]
+    times.hist(ax=ax, bins=30, edgecolor="black")
+    plt.show()

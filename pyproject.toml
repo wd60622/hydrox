@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "hydrox"
+name = "hyrox"
 version = "0.1.0"
-description = "Tools to analyze hydrox data and individuals"
+description = "Tools to analyze hyrox data and individuals"
 authors = ["Will Dean <wd60622@gmail.com>"]
 readme = "README.md"
 
@@ -20,6 +20,8 @@ conjugate-models = "^0.2.0"
 
 [tool.poetry.group.dev.dependencies]
 ipython = "^8.15.0"
+pytest = "^7.4.3"
+pytest-cov = "^4.1.0"
 
 [build-system]
 requires = ["poetry-core"]

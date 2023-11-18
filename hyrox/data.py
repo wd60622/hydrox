@@ -20,6 +20,7 @@ EXERCISES = [
     "100m Sandbag Lunges",
     "Wall Balls",
 ]
+EXERCISES = [f"{i + 1:02} {exercise}" for i, exercise in enumerate(EXERCISES)]
 
 SPLIT_INDEX = pd.MultiIndex.from_product(
     [EXERCISES, ["Pre-Exercise", "Exercise", "Recovery", "Run After"]]
@@ -72,6 +73,12 @@ class IndividualDetails:
 
         return ser
 
+    def percent_running(self) -> float:
+        runs = self.get_runs()
+        other = self.get_other_exercises()
+
+        return runs.sum() / (runs.sum() + other.sum())
+
     def get_roxzone_time(self) -> float:
         return self.workout_result.loc["Roxzone Time", "seconds"]
 
@@ -115,6 +122,9 @@ class IndividualDetails:
 class Details:
     individuals: List[IndividualDetails]
 
+    def __getitem__(self, idx: int) -> IndividualDetails:
+        return self.individuals[idx]
+
     @classmethod
     def from_urls(cls, urls: List[str]) -> "Details":
         hrefs = []
@@ -138,6 +148,22 @@ class Details:
     def sort_by_rank(self) -> "Details":
         self.individuals.sort(key=lambda individual: individual.get_rank())
         return self
+
+    def total_running(self) -> pd.Series:
+        index = [individual.get_name(with_rank=True) for individual in self.individuals]
+        return pd.Series(
+            [individual.get_runs().sum() for individual in self.individuals],
+            name="Total Running",
+            index=index,
+        )
+
+    def percent_running(self) -> pd.Series:
+        index = [individual.get_name(with_rank=True) for individual in self.individuals]
+        return pd.Series(
+            [individual.percent_running() for individual in self.individuals],
+            name="% Running",
+            index=index,
+        ).mul(100)
 
     @classmethod
     def from_list(cls, details: List["Details"]) -> "Details":
@@ -303,11 +329,11 @@ def highlight_some(
     **plot_kwargs,
 ) -> pd.DataFrame:
     ax = ax or plt.gca()
-    plot_kwargs = plot_kwargs or {
+    plot_kwargs = {
         "legend": False,
         "color": "black",
         "alpha": 0.10,
-    }
+    } | plot_kwargs
 
     df.plot(ax=ax, **plot_kwargs)
     df.iloc[:, highlight_idx].plot(ax=ax, legend=True)
@@ -425,35 +451,3 @@ def plot_overall_times(
     )
 
     return ax
-
-
-if __name__ == "__main__":
-    file = "./data/munich-2023.pkl"
-    details = pd.read_pickle(file)
-
-    details.individuals = [
-        individual for individual in details.individuals if individual is not None
-    ]
-
-    details.sort_by_rank()
-
-    from functools import partial
-
-    log = False
-    transform = partial(normalize, log=True) if log else lambda x: x
-    df_plot = details.get_rest_times().T.pipe(transform).T.reorder_levels([1, 0])
-    fig, axes = plt.subplots(ncols=2)
-
-    ax = axes[0]
-    df_plot.loc["Pre-Exercise"].pipe(
-        highlight_some, highlight_idx=[0, 1, 2, 149], ax=ax
-    )
-    ax.set(ylabel="Rank (person - mean) / std", title="Rest time before exercise")
-
-    ax = axes[1]
-    df_plot.loc["Recovery"].pipe(highlight_some, highlight_idx=[0, 1, 2, 149], ax=ax)
-    ax.set(ylabel="", title="Recovery time after exercise")
-    if log:
-        for ax in axes:
-            ax.set_ylim(-3, 3)
-    plt.show()

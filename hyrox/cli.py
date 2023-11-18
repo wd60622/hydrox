@@ -78,13 +78,31 @@ def individual_profile(url: str) -> None:
     fig.suptitle(f"Hyrox results for {name}")
     plt.show()
 
+    rest_times = individual.get_rest_times().reorder_levels([1, 0])
+
+    print(rest_times)
+    print(rest_times.loc["Pre-Exercise"].sort_index())
+
+    fig, axes = plt.subplots(ncols=2)
+    ax = axes[0]
+    rest_times.loc["Pre-Exercise"].sort_index().iloc[:-1].plot(ax=ax)
+    ax.set(title="Rest time before exercise")
+
+    ax = axes[1]
+    rest_times.loc["Recovery"].sort_index().plot(ax=ax)
+    ax.set(title="Recovery time after exercise")
+    plt.show()
+
     fig, ax = plt.subplots()
     times = other.copy()
     times["Run"] = runs.sum()
     times["Roxzone"] = individual.get_roxzone_time()
-    times.sort_values().plot.bar(ax=ax)
+    times = times / times.sum()
+    times.sort_values().plot.barh(ax=ax)
+    ax.set(title="% Time spent on each exercise")
 
     fig.suptitle(f"Hyrox results for {name}")
+    plt.show()
 
 
 def load_details(paths: List[Path]) -> Details:
@@ -137,6 +155,34 @@ def results(
 
 
 @app.command()
+def workout_correlation(
+    path: List[Path] = typer.Option(...), exercise: List[str] = typer.Option(...)
+) -> None:
+    details = load_details(path)
+    details.individuals = [
+        individual for individual in details.individuals if individual is not None
+    ]
+    details.sort_by_rank()
+
+    exercises = details.get_exercises()
+    for ex in exercise:
+        if ex not in exercises.columns:
+            raise ValueError(
+                f"Exercise {ex} not found in the data. Available exercises are {exercises.columns}"
+            )
+
+    exercises["rank"] = range(1, len(details.individuals) + 1)
+
+    for ex in exercise:
+        print(ex)
+        xlim = exercises[ex].quantile(0.99) * 1.1
+        ax = exercises.plot.scatter(x=ex, y="rank")
+        ax.set(title=f"Correlation between {ex} and rank")
+        ax.set_xlim(None, xlim)
+        plt.show()
+
+
+@app.command()
 def individual_comparison(
     path: List[Path] = typer.Option(...), highlight: List[int] = HIGHLIGHT
 ) -> None:
@@ -186,17 +232,19 @@ def optimize_template_average(
     results_path: Path = typer.Option(...),
     individual: Optional[int] = typer.Option(None),
 ) -> None:
-    if path.exists():
+    if results_path.exists():
         raise FileExistsError(f"File {path} already exists.")
 
     details = load_details([results_path])
-    df = details.get_exercises()
+    df = details.get_other_exercises()
+    df["Running 1000m"] = details.get_runs().sum(axis=1) / 8
     template = create_template()
     fill_values = (
         df.T.mean(axis=1).iloc[:-3] if individual is None else df.iloc[individual, :-3]
     )
     template.loc[:, "All-In"] = fill_values
-    template.round(2).to_csv(path, index=True)
+    print(template)
+    template.round(2).to_csv(results_path, index=True)
 
 
 @app.command()

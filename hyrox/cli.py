@@ -11,8 +11,8 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
-from hydrox.data import IndividualDetails, Details, highlight_some
-from hydrox.optimize import create_template, index_values
+from hyrox.data import IndividualDetails, Details, highlight_some, normalize
+from hyrox.optimize import create_template, index_values
 
 
 def highlight_callback(values: List[int]) -> List[int]:
@@ -36,12 +36,6 @@ def details_callback(paths: List[Path]) -> Details:
 
 DETAILS = typer.Option(..., callback=details_callback)
 
-
-def normalize(df: pd.DataFrame, log: bool = True) -> pd.DataFrame:
-    transform = np.log if log else lambda x: x
-    return df.pipe(transform).pipe(lambda df: (df - df.mean()) / df.std())
-
-
 app = typer.Typer()
 
 
@@ -50,6 +44,12 @@ def save_data(
     url: List[str] = typer.Option(...), path: Path = typer.Option(...)
 ) -> None:
     """Save data from a list of urls to a pickle file."""
+    if path.exists():
+        raise FileExistsError(f"File {path} already exists.")
+
+    if path.suffix not in (".pickle", ".pkl"):
+        raise ValueError(f"File {path} must have a pickle extension.")
+
     details = Details.from_urls(url)
 
     with path.open(mode="wb") as f:
@@ -75,7 +75,7 @@ def individual_profile(url: str) -> None:
     ax.axhline(individual.get_roxzone_time(), color="black", linestyle="--")
 
     name = individual.participant["Name"]
-    fig.suptitle(f"Hydrox results for {name}")
+    fig.suptitle(f"Hyrox results for {name}")
     plt.show()
 
     fig, ax = plt.subplots()
@@ -84,7 +84,7 @@ def individual_profile(url: str) -> None:
     times["Roxzone"] = individual.get_roxzone_time()
     times.sort_values().plot.bar(ax=ax)
 
-    fig.suptitle(f"Hydrox results for {name}")
+    fig.suptitle(f"Hyrox results for {name}")
 
 
 def load_details(paths: List[Path]) -> Details:
@@ -103,10 +103,6 @@ def results(
 ) -> None:
     """High level overview of the results."""
     details = load_details(path)
-
-    import pdb
-
-    pdb.set_trace()
 
     other = details.get_other_exercises().index[1:]
     ax = (

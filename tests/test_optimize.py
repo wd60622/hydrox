@@ -1,6 +1,6 @@
 import numpy as np
 
-from hydrox.optimize import index_values
+from hyrox.optimize import index_values
 
 
 def test_index_values():

@@ -10,6 +10,27 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+EXERCISES = [
+    "1000m SkiErg",
+    "50m Sled Push",
+    "50m Sled Pull",
+    "80m Burpee Broad Jump",
+    "1000m Row",
+    "200m Farmers Carry",
+    "100m Sandbag Lunges",
+    "Wall Balls",
+]
+
+SPLIT_INDEX = pd.MultiIndex.from_product(
+    [EXERCISES, ["Pre-Exercise", "Exercise", "Recovery", "Run After"]]
+)
+
+
+def normalize(df: pd.DataFrame, log: bool = True) -> pd.DataFrame:
+    transform = np.log if log else lambda x: x
+    return df.pipe(transform).pipe(lambda df: (df - df.mean()) / df.std())
+
+
 @dataclass
 class IndividualDetails:
     """Data for an individual athlete.
@@ -54,6 +75,16 @@ class IndividualDetails:
     def get_roxzone_time(self) -> float:
         return self.workout_result.loc["Roxzone Time", "seconds"]
 
+    def get_splits(self) -> pd.DataFrame:
+        if "seconds" not in self.splits.columns:
+            self.splits["seconds"] = time_to_seconds(self.splits["Time"])
+            self.splits["diff"] = self.splits["seconds"].diff().shift(-1)
+
+        return self.splits.set_index(SPLIT_INDEX[:-2])
+
+    def get_rest_times(self) -> pd.Series:
+        return self.get_splits()["diff"].rename("seconds")
+
     @classmethod
     def from_url(cls, individual_url: str) -> "IndividualDetails":
         try:
@@ -74,6 +105,9 @@ class IndividualDetails:
             individual.workout_result["Time"]
         )
 
+        individual.splits["seconds"] = time_to_seconds(individual.splits["Time"])
+        individual.splits["diff"] = individual.splits["seconds"].diff().shift(-1)
+
         return individual
 
 
@@ -87,9 +121,23 @@ class Details:
         for url in urls:
             hrefs.extend(get_all_hrefs(url))
 
-        individuals = [IndividualDetails.from_url(url) for url in hrefs]
+        hrefs = list(set(hrefs))
+
+        # TODO: Parallelize this
+        individuals = []
+        for url in hrefs:
+            try:
+                individual = IndividualDetails.from_url(url)
+            except Exception as e:
+                print(f"Error loading {url}: {e}")
+            else:
+                individuals.append(individual)
 
         return cls(individuals=individuals)
+
+    def sort_by_rank(self) -> "Details":
+        self.individuals.sort(key=lambda individual: individual.get_rank())
+        return self
 
     @classmethod
     def from_list(cls, details: List["Details"]) -> "Details":
@@ -123,6 +171,17 @@ class Details:
         return pd.concat(
             [
                 individual.get_other_exercises().rename(
+                    individual.get_name(with_rank=with_rank)
+                )
+                for individual in self.individuals
+            ],
+            axis=1,
+        )
+
+    def get_rest_times(self, with_rank: bool = True) -> pd.DataFrame:
+        return pd.concat(
+            [
+                individual.get_rest_times().rename(
                     individual.get_name(with_rank=with_rank)
                 )
                 for individual in self.individuals
@@ -366,3 +425,35 @@ def plot_overall_times(
     )
 
     return ax
+
+
+if __name__ == "__main__":
+    file = "./data/munich-2023.pkl"
+    details = pd.read_pickle(file)
+
+    details.individuals = [
+        individual for individual in details.individuals if individual is not None
+    ]
+
+    details.sort_by_rank()
+
+    from functools import partial
+
+    log = False
+    transform = partial(normalize, log=True) if log else lambda x: x
+    df_plot = details.get_rest_times().T.pipe(transform).T.reorder_levels([1, 0])
+    fig, axes = plt.subplots(ncols=2)
+
+    ax = axes[0]
+    df_plot.loc["Pre-Exercise"].pipe(
+        highlight_some, highlight_idx=[0, 1, 2, 149], ax=ax
+    )
+    ax.set(ylabel="Rank (person - mean) / std", title="Rest time before exercise")
+
+    ax = axes[1]
+    df_plot.loc["Recovery"].pipe(highlight_some, highlight_idx=[0, 1, 2, 149], ax=ax)
+    ax.set(ylabel="", title="Recovery time after exercise")
+    if log:
+        for ax in axes:
+            ax.set_ylim(-3, 3)
+    plt.show()

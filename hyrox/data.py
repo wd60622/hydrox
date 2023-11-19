@@ -23,7 +23,14 @@ EXERCISES = [
 EXERCISES = [f"{i + 1:02} {exercise}" for i, exercise in enumerate(EXERCISES)]
 
 SPLIT_INDEX = pd.MultiIndex.from_product(
-    [EXERCISES, ["Pre-Exercise", "Exercise", "Recovery", "Run After"]]
+    [EXERCISES[:-1], ["Pre-Exercise", "Exercise", "Recovery", "Run After"]]
+).append(
+    pd.MultiIndex.from_tuples(
+        [
+            (EXERCISES[-1], "Exercise"),
+            (EXERCISES[-1], "Recovery"),
+        ]
+    )
 )
 
 
@@ -87,7 +94,7 @@ class IndividualDetails:
             self.splits["seconds"] = time_to_seconds(self.splits["Time"])
             self.splits["diff"] = self.splits["seconds"].diff().shift(-1)
 
-        return self.splits.set_index(SPLIT_INDEX[:-2])
+        return self.splits.set_index(SPLIT_INDEX)
 
     def get_rest_times(self) -> pd.Series:
         return self.get_splits()["diff"].rename("seconds")
@@ -96,7 +103,8 @@ class IndividualDetails:
     def from_url(cls, individual_url: str) -> "IndividualDetails":
         try:
             dfs = pd.read_html(individual_url)
-        except Exception:
+        except Exception as e:
+            print(f"Error loading {individual_url}: {e}")
             return None
 
         individual = cls(
@@ -141,7 +149,8 @@ class Details:
             except Exception as e:
                 print(f"Error loading {url}: {e}")
             else:
-                individuals.append(individual)
+                if individual is not None:
+                    individuals.append(individual)
 
         return cls(individuals=individuals)
 
@@ -242,6 +251,27 @@ class Details:
         self, ax: Optional[plt.Axes] = None, **plot_kwargs
     ) -> plt.Axes:
         return plot_overall_times(self.individuals, ax=ax, **plot_kwargs)
+
+    def plot_rest_times(self, highlight) -> None:
+        df_rest = self.get_rest_times().reorder_levels([1, 0])
+
+        fig, axes = plt.subplots(ncols=2)
+        fig.suptitle("Rest times")
+
+        ax = axes[0]
+        df_rest.loc["Pre-Exercise"].pipe(highlight_some, highlight_idx=highlight, ax=ax)
+        ax.set(
+            ylim=(0, 60),
+            title="Rest time before exercise",
+            ylabel="Time (seconds)",
+        )
+        ax = axes[1]
+        df_rest.loc["Recovery"].pipe(highlight_some, highlight_idx=highlight, ax=ax)
+        ax.set(
+            ylim=(0, 60),
+            title="Recovery time after exercise",
+            ylabel="",
+        )
 
 
 def load_data(individual_url: str) -> IndividualDetails:

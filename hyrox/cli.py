@@ -61,8 +61,6 @@ def individual_profile(url: str) -> None:
     """Load from the URL and display some figures for the individual"""
     individual = IndividualDetails.from_url(url)
 
-    print(individual.participant)
-
     fig, axes = plt.subplots(ncols=2)
 
     ax = axes[0]
@@ -85,7 +83,7 @@ def individual_profile(url: str) -> None:
 
     fig, axes = plt.subplots(ncols=2)
     ax = axes[0]
-    rest_times.loc["Pre-Exercise"].sort_index().iloc[:-1].plot(ax=ax)
+    rest_times.loc["Pre-Exercise"].sort_index().plot(ax=ax)
     ax.set(title="Rest time before exercise")
 
     ax = axes[1]
@@ -122,18 +120,12 @@ def results(
     """High level overview of the results."""
     details = load_details(path)
 
-    other = details.get_other_exercises().index[1:]
-    ax = (
-        details.get_runs()
-        .pct_change()[1:]
-        .set_index(other)
-        .pipe(highlight_some, highlight_idx=highlight)
-    )
-    ax.set(
-        ylim=(0.9 - 1, 1.20 - 1),
-        title="Time relative to previous",
-        xlabel="Previous Exercise",
-    )
+    details.individuals = [
+        individual for individual in details.individuals if individual is not None
+    ]
+    details.sort_by_rank()
+
+    details.plot_rest_times(highlight=highlight)
     plt.show()
 
     details.plot_splits(highlight=highlight)
@@ -232,19 +224,24 @@ def optimize_template_average(
     results_path: Path = typer.Option(...),
     individual: Optional[int] = typer.Option(None),
 ) -> None:
-    if results_path.exists():
+    if path.exists():
         raise FileExistsError(f"File {path} already exists.")
 
     details = load_details([results_path])
+    details.individuals = [
+        individual for individual in details.individuals if individual is not None
+    ]
     df = details.get_other_exercises()
-    df["Running 1000m"] = details.get_runs().sum(axis=1) / 8
+    df.loc["Running 1000m", :] = details.get_runs().sum(axis=0) / 8
+
+    print(df)
     template = create_template()
-    fill_values = (
-        df.T.mean(axis=1).iloc[:-3] if individual is None else df.iloc[individual, :-3]
-    )
-    template.loc[:, "All-In"] = fill_values
     print(template)
-    template.round(2).to_csv(results_path, index=True)
+    fill_values = df.T.mean(axis=0) if individual is None else df.iloc[individual, :-3]
+    print(fill_values)
+    template.loc[:, "All-In"] = (fill_values / 60).round(2)
+    print(template)
+    template.round(2).to_csv(path, index=True)
 
 
 @app.command()

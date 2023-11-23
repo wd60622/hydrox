@@ -1,4 +1,3 @@
-from itertools import islice
 from typing import List, Optional
 from pathlib import Path
 
@@ -7,12 +6,11 @@ import pickle
 import typer
 
 import pandas as pd
-import numpy as np
 
 import matplotlib.pyplot as plt
 
 from hyrox.data import IndividualDetails, Details, highlight_some, normalize
-from hyrox.optimize import create_template, index_values
+from hyrox.optimize import create_template, brute_force
 
 
 def highlight_callback(values: List[int]) -> List[int]:
@@ -234,61 +232,30 @@ def optimize_template_average(
     df = details.get_other_exercises()
     df.loc["Running 1000m", :] = details.get_runs().sum(axis=0) / 8
 
-    print(df)
     template = create_template()
-    print(template)
     fill_values = df.T.mean(axis=0) if individual is None else df.iloc[individual, :-3]
-    print(fill_values)
-    template.loc[:, "All-In"] = (fill_values / 60).round(2)
-    print(template)
-    template.round(2).to_csv(path, index=True)
+    template.loc[:, "Priority"] = fill_values / 60
+    template.to_csv(path, index=True)
 
 
 @app.command()
 def optimize(
-    path: Path, maintenance: int = 4, prioritize: int = 2, all_in: int = 2
+    path: Path,
+    maintenance: int = 5,
+    priority: int = 3,
+    all_in: int = 1,
 ) -> None:
     """Brute force the optimization of the exercises based on the template and different effort levels."""
-    df = pd.read_csv(path, index_col=0).iloc[:8]
+    df = pd.read_csv(path, index_col=0)
+    df.loc["Running 1000m", :] = df.loc["Running 1000m", :] * 8
 
-    if df.isnull().any().any():
-        raise ValueError("The template must be filled out completely.")
-
-    total = maintenance + prioritize + all_in
-    if total != len(df):
-        raise ValueError(
-            f"The number of exercises must equal the sum of the effort levels. i.e. {total} != {len(df)}"
-        )
-
-    counts = [maintenance, prioritize, all_in]
-    times = []
-    min_time = np.inf
-    best = None
-
-    iteration_values = islice(index_values(counts=counts), 10_000_000)
-    for idx, (main, prio, ai) in enumerate(iteration_values):
-        total_time = (
-            df.iloc[main, 0].sum() + df.iloc[prio, 1].sum() + df.iloc[ai, 2].sum()
-        )
-
-        times.append(total_time)
-
-        if total_time < min_time:
-            min_time = total_time
-            best = (idx, main, prio, ai)
-
-    print("The best happens when you do the following exercises:")
-    print("Maintenance:")
-    print(df.index[best[1]])
-    print("Priority:")
-    print(df.index[best[2]])
-    print("All-In:")
-    print(df.index[best[3]])
+    counts = [maintenance, priority, all_in]
+    times, best = brute_force(df, counts)
 
     _, axes = plt.subplots(ncols=2)
 
     ax = axes[0]
-    times = pd.Series(times).pipe(lambda ser: ser / ser.min())
+    times = pd.Series(times)
     times.plot(ax=ax, alpha=0.25)
     ax.axvline(best[0], color="black", linestyle="--")
 

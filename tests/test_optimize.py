@@ -10,16 +10,30 @@ def total_counts(counts):
     return math.factorial(sum(counts)) / np.prod([math.factorial(c) for c in counts])
 
 
-def test_combination_split() -> None:
-    idx = np.arange(4)
+@pytest.mark.parametrize(
+    "idx, r, expected",
+    [
+        (
+            np.arange(4),
+            2,
+            [
+                (np.array([0, 1]), np.array([2, 3])),
+                (np.array([0, 2]), np.array([1, 3])),
+                (np.array([0, 3]), np.array([1, 2])),
+                (np.array([1, 2]), np.array([0, 3])),
+                (np.array([1, 3]), np.array([0, 2])),
+                (np.array([2, 3]), np.array([0, 1])),
+            ],
+        ),
+    ],
+)
+def test_combination_split(idx, r, expected) -> None:
+    actual = list(combinations_split(idx, r))
 
-    actual = list(combinations_split(idx, 2))
-
-    assert len(actual) == 6
-    np.testing.assert_array_equal(actual[0][0], np.array([0, 1]))
-    np.testing.assert_array_equal(actual[0][1], np.array([2, 3]))
-    np.testing.assert_array_equal(actual[1][0], np.array([0, 2]))
-    np.testing.assert_array_equal(actual[1][1], np.array([1, 3]))
+    assert len(actual) == len(expected)
+    for act, exp in zip(actual, expected):
+        for a, e in zip(act, exp):
+            np.testing.assert_array_equal(a, e)
 
 
 @pytest.mark.parametrize(

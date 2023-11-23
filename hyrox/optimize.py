@@ -1,7 +1,6 @@
 """Optimize the performance of an individual."""
-from itertools import permutations
-from typing import List
-import warnings
+from itertools import combinations
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,24 +24,19 @@ def create_template() -> pd.DataFrame:
     return pd.DataFrame(index=exercises, columns=effort_levels)
 
 
-def index_values(counts: List[int]):
-    """Return all possible index values for a given set of counts."""
+def combinations_split(idx, r):
+    for comb in combinations(idx, r):
+        comb_array = np.array(comb)
+        mask = np.isin(idx, comb_array)
+
+        yield idx[mask], idx[~mask]
+
+
+def index_values(counts: Tuple[int, int, int]):
     total = sum(counts)
 
-    if total > 10:
-        warnings.warn(
-            "This may take a while. Consider reducing the number of exercises.",
-            UserWarning,
-            stacklevel=2,
-        )
+    idx = np.arange(total)
 
-    index_values = np.arange(total)
-
-    for perm in permutations(index_values, total):
-        splits = []
-        start = 0
-        for count in counts:
-            splits.append(np.array(perm[start : start + count]))
-            start += count
-
-        yield splits
+    for lit, lit_rest in combinations_split(idx, counts[0]):
+        for lit2, lit2_rest in combinations_split(lit_rest, counts[1]):
+            yield lit, lit2, lit2_rest

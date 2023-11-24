@@ -9,6 +9,9 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
+from hyrox.plot import highlight_some
+from hyrox.utils import ordinal, time_to_seconds
+
 
 EXERCISES = [
     "1000m SkiErg",
@@ -68,7 +71,8 @@ class IndividualDetails:
         return self.workout_result["seconds"]
 
     def get_runs(self) -> pd.Series:
-        ser = self.workout_result.pipe(filter_running)["seconds"]
+        idx = self.workout_result.index.str.contains("Running")
+        ser = self.workout_result.loc[idx, "seconds"]
         ser.index = range(1, len(ser) + 1)
         ser.index.name = "Run"
 
@@ -252,7 +256,7 @@ class Details:
     ) -> plt.Axes:
         return plot_overall_times(self.individuals, ax=ax, **plot_kwargs)
 
-    def plot_rest_times(self, highlight) -> None:
+    def plot_rest_times(self, highlight, ymax: int = 60) -> None:
         df_rest = self.get_rest_times().reorder_levels([1, 0])
 
         fig, axes = plt.subplots(ncols=2)
@@ -261,64 +265,17 @@ class Details:
         ax = axes[0]
         df_rest.loc["Pre-Exercise"].pipe(highlight_some, highlight_idx=highlight, ax=ax)
         ax.set(
-            ylim=(0, 60),
+            ylim=(0, ymax),
             title="Rest time before exercise",
             ylabel="Time (seconds)",
         )
         ax = axes[1]
         df_rest.loc["Recovery"].pipe(highlight_some, highlight_idx=highlight, ax=ax)
         ax.set(
-            ylim=(0, 60),
+            ylim=(0, ymax),
             title="Recovery time after exercise",
             ylabel="",
         )
-
-
-def load_data(individual_url: str) -> IndividualDetails:
-    try:
-        dfs = pd.read_html(individual_url)
-    except Exception:
-        return None
-
-    individual = IndividualDetails(
-        participant=dfs[0].set_index(0).squeeze(),
-        scoring=dfs[1],
-        workout_result=dfs[2].set_index("Split"),
-        judge_decision=dfs[3],
-        overall_time=dfs[4],
-        splits=dfs[5],
-    )
-
-    individual.workout_result["seconds"] = time_to_seconds(
-        individual.workout_result["Time"]
-    )
-
-    return individual
-
-
-def ordinal(n: int):
-    if 11 <= (n % 100) <= 13:
-        suffix = "th"
-    else:
-        suffix = ["th", "st", "nd", "rd", "th"][min(n % 10, 4)]
-    return str(n) + suffix
-
-
-def time_to_seconds(times: pd.Series) -> pd.Series:
-    null_rows = times == "–"
-
-    split = times.loc[~null_rows].str.split(":", expand=True).astype(int)
-
-    multiplier = np.array([60 * 60, 60, 1])
-    result = split @ multiplier
-
-    return result.reindex(times.index)
-
-
-def filter_running(df: pd.DataFrame) -> pd.DataFrame:
-    idx = df.index.str.contains("Running")
-
-    return df.loc[idx]
 
 
 def get_base_url(url) -> str:
@@ -331,7 +288,12 @@ def get_base_url(url) -> str:
 
 
 def get_all_hrefs(url: str) -> List[str]:
-    """Extract all the individual results URLs"""
+    """Extract all the individual results URLs
+
+    Example page:
+    https://results.hyrox.com/season-6/?page=2&event=HPRO_JGDMS4JI619&pid=list&pidp=ranking_nav&ranking=time_finish_netto&search%5Bsex%5D=M&search%5Bage_class%5D=%25&search%5Bnation%5D=%25
+
+    """
     # creating requests object
     html = requests.get(url).content
 
@@ -350,24 +312,6 @@ def get_all_hrefs(url: str) -> List[str]:
 
     base_url = get_base_url(url)
     return [f"{base_url}{get_href(row)}" for row in rows]
-
-
-def highlight_some(
-    df: pd.DataFrame,
-    highlight_idx: List[int],
-    ax: Optional[plt.Axes] = None,
-    **plot_kwargs,
-) -> pd.DataFrame:
-    ax = ax or plt.gca()
-    plot_kwargs = {
-        "legend": False,
-        "color": "black",
-        "alpha": 0.10,
-    } | plot_kwargs
-
-    df.plot(ax=ax, **plot_kwargs)
-    df.iloc[:, highlight_idx].plot(ax=ax, legend=True)
-    return ax
 
 
 def plot_splits(
@@ -404,17 +348,12 @@ def plot_splits(
         suptitle = f"{suptitle} for {location}"
     fig.suptitle(suptitle)
 
-    if isinstance(highlight, int):
-        highlight_idx = list(range(highlight))
-    else:
-        highlight_idx = highlight
-
-    highlight_some(running_times, highlight_idx, ax=axes[0])
+    highlight_some(running_times, highlight_idx=highlight, ax=axes[0])
     axes[0].set_title("Running times")
     axes[0].set_xlabel("")
     axes[0].set_ylabel("Time (seconds)")
 
-    highlight_some(other_exercises, highlight_idx, ax=axes[1])
+    highlight_some(other_exercises, highlight_idx=highlight, ax=axes[1])
     axes[1].set_title("Other exercises")
     axes[1].set_xlabel("")
     axes[1].set_ylabel("")
@@ -422,7 +361,7 @@ def plot_splits(
 
 def plot_cummlative_splits(
     results: List[IndividualDetails],
-    highlight: int = 5,
+    highlight: Union[int, List[int]] = 5,
     location: Optional[str] = None,
     fig: Optional[plt.Figure] = None,
 ) -> None:
@@ -436,13 +375,8 @@ def plot_cummlative_splits(
         axis=1,
     )
 
-    if isinstance(highlight, int):
-        highlight_idx = list(range(highlight))
-    else:
-        highlight_idx = highlight
-
     ax = fig or plt.gca()
-    ax = highlight_some(df_splits, highlight_idx, ax=ax)
+    ax = highlight_some(df_splits, highlight_idx=highlight, ax=ax)
     ax.set_title("Cumulative splits")
     ax.set_xlabel("")
     ax.set_ylabel("Time (seconds)")
@@ -459,7 +393,7 @@ def plot_overall_times(
                 result.overall_time.set_index(0)
                 .loc["Overall Time"]
                 .rename(result.get_name(with_rank=False))
-                for i, result in enumerate(results)
+                for result in results
             ],
             axis=1,
         )
